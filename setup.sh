@@ -56,11 +56,53 @@ mkdir -p www/dev/dist
 print_info "Lade Redaxo 5.19.0 herunter..."
 curl -L -o redaxo-5.19.0.zip https://redaxo.org/download/redaxo/5.19.0.zip
 
-# Entpacken
+# Entpacken mit verbesserter Methode
 print_info "Entpacke Redaxo..."
-unzip -q redaxo-5.19.0.zip -d temp_redaxo
-mv temp_redaxo/redaxo_5.19.0/* www/dev/dist/
+# Temporäres Verzeichnis erstellen
 rm -rf temp_redaxo
+mkdir -p temp_redaxo
+
+# ZIP entpacken
+unzip -q redaxo-5.19.0.zip -d temp_redaxo
+
+# Debug: Zeige was entpackt wurde
+print_info "Analysiere ZIP-Struktur..."
+find temp_redaxo -maxdepth 2 -type d | head -10
+
+# Prüfe ob direkt Dateien oder in Unterordner entpackt wurde
+if [ -f "temp_redaxo/index.php" ] || [ -d "temp_redaxo/redaxo" ]; then
+    # Fall 1: Dateien sind direkt in temp_redaxo
+    print_info "Dateien direkt im Hauptverzeichnis gefunden"
+    cp -R temp_redaxo/* www/dev/dist/
+elif [ -d "temp_redaxo/redaxo_5.19.0" ]; then
+    # Fall 2: Dateien sind in redaxo_5.19.0 Unterordner
+    print_info "Gefunden: temp_redaxo/redaxo_5.19.0"
+    cp -R temp_redaxo/redaxo_5.19.0/* www/dev/dist/
+else
+    # Fall 3: Suche nach einem einzelnen Ordner
+    SINGLE_DIR=$(find temp_redaxo -maxdepth 1 -mindepth 1 -type d | head -1)
+    if [ -n "$SINGLE_DIR" ] && [ $(find temp_redaxo -maxdepth 1 -mindepth 1 -type d | wc -l) -eq 1 ]; then
+        print_info "Einzelner Ordner gefunden: $SINGLE_DIR"
+        cp -R "$SINGLE_DIR"/* www/dev/dist/
+    else
+        print_error "Unerwartete ZIP-Struktur!"
+        ls -la temp_redaxo/
+        exit 1
+    fi
+fi
+
+# Aufräumen
+rm -rf temp_redaxo
+
+# Prüfen ob Installation erfolgreich
+if [ ! -f "www/dev/dist/index.php" ] && [ ! -d "www/dev/dist/redaxo" ]; then
+    print_error "Installation fehlgeschlagen - keine index.php oder redaxo-Ordner gefunden!"
+    print_info "Inhalt von www/dev/dist:"
+    ls -la www/dev/dist/
+    exit 1
+else
+    print_info "Redaxo erfolgreich entpackt!"
+fi
 
 # .env Datei erstellen
 print_info "Erstelle .env Datei..."
@@ -471,8 +513,28 @@ update_redaxo() {
         mv www/dev/dist www/dev/dist_old
         mkdir -p www/dev/dist
 
+        # Temporäres Verzeichnis für Entpacken
+        rm -rf temp_redaxo
+        mkdir -p temp_redaxo
         unzip -q "redaxo-${VERSION}.zip" -d temp_redaxo
-        mv temp_redaxo/redaxo_${VERSION}/* www/dev/dist/
+
+        # Prüfe ob direkt Dateien oder in Unterordner entpackt wurde
+        if [ -f "temp_redaxo/index.php" ] || [ -d "temp_redaxo/redaxo" ]; then
+            # Dateien sind direkt in temp_redaxo
+            cp -R temp_redaxo/* www/dev/dist/
+        elif [ -d "temp_redaxo/redaxo_${VERSION}" ]; then
+            # Dateien sind in versionsspezifischem Unterordner
+            cp -R "temp_redaxo/redaxo_${VERSION}"/* www/dev/dist/
+        else
+            # Suche nach einem einzelnen Ordner
+            SINGLE_DIR=$(find temp_redaxo -maxdepth 1 -mindepth 1 -type d | head -1)
+            if [ -n "$SINGLE_DIR" ]; then
+                cp -R "$SINGLE_DIR"/* www/dev/dist/
+            else
+                cp -R temp_redaxo/* www/dev/dist/
+            fi
+        fi
+
         rm -rf temp_redaxo
 
         # Konfiguration und Media wiederherstellen
@@ -634,6 +696,105 @@ www/dev/dist_old/
 redaxo-*.zip
 EOF
 
+# Debug-Skript erstellen
+print_info "Erstelle debug.sh..."
+cat > debug.sh << 'EOF'
+#!/bin/bash
+# Pfad: ./debug.sh
+
+# Farben
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+BLUE='\033[0;34m'
+NC='\033[0m'
+
+echo -e "${BLUE}=== Debug-Informationen ===${NC}\n"
+
+# System-Informationen
+echo -e "${YELLOW}System:${NC}"
+echo "OS: $OSTYPE"
+echo "Pfad: $(pwd)"
+echo "Benutzer: $(whoami)"
+echo
+
+# Docker-Informationen
+echo -e "${YELLOW}Docker:${NC}"
+docker --version
+docker-compose --version
+echo
+
+# Projektstruktur
+echo -e "${YELLOW}Projektstruktur:${NC}"
+if [ -d "www/dev/dist" ]; then
+    echo -e "${GREEN}✓${NC} www/dev/dist existiert"
+    echo "Inhalt:"
+    ls -la www/dev/dist/ | head -10
+    echo "..."
+else
+    echo -e "${RED}✗${NC} www/dev/dist existiert nicht"
+fi
+echo
+
+# Redaxo ZIP Test
+echo -e "${YELLOW}Redaxo ZIP Test:${NC}"
+REDAXO_ZIP=$(ls redaxo-*.zip 2>/dev/null | head -1)
+if [ -n "$REDAXO_ZIP" ]; then
+    echo -e "${GREEN}✓${NC} $REDAXO_ZIP gefunden"
+    echo "Größe: $(ls -lh $REDAXO_ZIP | awk '{print $5}')"
+
+    # ZIP-Inhalt prüfen
+    echo "ZIP-Struktur (erste Ebene):"
+    unzip -l $REDAXO_ZIP | head -20
+else
+    echo -e "${RED}✗${NC} Keine redaxo-*.zip gefunden"
+fi
+echo
+
+# Docker Status
+echo -e "${YELLOW}Docker Container Status:${NC}"
+if [ -f .env ]; then
+    export $(cat .env | grep -v '^#' | xargs)
+    docker ps -a | grep -E "(CONTAINER|$CONTAINER_PREFIX)" || echo "Keine Container gefunden"
+else
+    echo -e "${RED}✗${NC} .env nicht gefunden"
+fi
+echo
+
+# Port-Verfügbarkeit
+echo -e "${YELLOW}Port-Verfügbarkeit:${NC}"
+for port in 8082 8083 3306; do
+    if lsof -Pi :$port -sTCP:LISTEN -t >/dev/null 2>&1; then
+        echo -e "${RED}✗${NC} Port $port ist belegt"
+    else
+        echo -e "${GREEN}✓${NC} Port $port ist frei"
+    fi
+done
+echo
+
+# Speicherplatz
+echo -e "${YELLOW}Speicherplatz:${NC}"
+df -h . | grep -v "Filesystem"
+echo
+
+# Berechtigungen
+echo -e "${YELLOW}Berechtigungen:${NC}"
+ls -ld . www www/dev www/dev/dist 2>/dev/null || echo "Einige Verzeichnisse fehlen"
+echo
+
+# Test-Entpacken
+echo -e "${YELLOW}Test-Entpacken der ZIP:${NC}"
+if [ -n "$REDAXO_ZIP" ]; then
+    mkdir -p test_extract
+    unzip -q $REDAXO_ZIP -d test_extract
+    echo "Extrahierte Struktur:"
+    find test_extract -maxdepth 3 -type d | head -20
+    rm -rf test_extract
+fi
+
+echo -e "\n${BLUE}=== Ende Debug-Informationen ===${NC}"
+EOF
+
 # README.md erstellen
 print_info "Erstelle README.md..."
 cat > README.md << 'EOF'
@@ -672,13 +833,59 @@ Projektname: PROJECT_NAME_PLACEHOLDER
 Siehe die ausführliche README.md im Hauptverzeichnis.
 EOF
 
-# Platzhalter in README ersetzen
-sed -i '' "s/PROJECT_NAME_PLACEHOLDER/$PROJECT_NAME/g" README.md
-sed -i '' "s/WEB_PORT_PLACEHOLDER/$WEB_PORT/g" README.md
-sed -i '' "s/PMA_PORT_PLACEHOLDER/$PMA_PORT/g" README.md
-sed -i '' "s/DB_PORT_PLACEHOLDER/$DB_PORT/g" README.md
-sed -i '' "s/MYSQL_DATABASE_PLACEHOLDER/$MYSQL_DATABASE/g" README.md
-sed -i '' "s/MYSQL_USER_PLACEHOLDER/$MYSQL_USER/g" README.md
+# Variablen für README definieren
+MYSQL_DATABASE="redaxo_db"
+MYSQL_USER="redaxo_user"
+
+# Platzhalter in README ersetzen - Robuste Methode für macOS und Linux
+print_info "Konfiguriere README.md..."
+
+# Methode 1: Verwende perl (auf macOS immer verfügbar)
+if command -v perl >/dev/null 2>&1; then
+    perl -i -pe "s/PROJECT_NAME_PLACEHOLDER/$PROJECT_NAME/g" README.md
+    perl -i -pe "s/WEB_PORT_PLACEHOLDER/8082/g" README.md
+    perl -i -pe "s/PMA_PORT_PLACEHOLDER/8083/g" README.md
+    perl -i -pe "s/DB_PORT_PLACEHOLDER/3306/g" README.md
+    perl -i -pe "s/MYSQL_DATABASE_PLACEHOLDER/$MYSQL_DATABASE/g" README.md
+    perl -i -pe "s/MYSQL_USER_PLACEHOLDER/$MYSQL_USER/g" README.md
+else
+    # Fallback: Erstelle README neu mit korrekten Werten
+    cat > README.md << EOF
+# Redaxo Docker Entwicklungsumgebung
+
+Projektname: $PROJECT_NAME
+
+## Quick Start
+
+\`\`\`bash
+# Container starten
+./start.sh
+
+# Container stoppen
+./stop.sh
+
+# Status anzeigen
+./status.sh
+\`\`\`
+
+## Zugriff
+
+- **Redaxo**: http://localhost:8082
+- **phpMyAdmin**: http://localhost:8083
+- **MariaDB**: localhost:3306
+
+## Datenbank-Zugangsdaten
+
+- Host: \`db\`
+- Datenbank: \`$MYSQL_DATABASE\`
+- Benutzer: \`$MYSQL_USER\`
+- Passwort: Siehe .env Datei
+
+## Weitere Informationen
+
+Siehe die ausführliche README.md im Hauptverzeichnis.
+EOF
+fi
 
 # Alle Skripte ausführbar machen
 chmod +x *.sh
@@ -690,8 +897,8 @@ echo
 print_info "Nächste Schritte:"
 echo "  1. cd $PROJECT_NAME"
 echo "  2. ./start.sh"
-echo "  3. Öffne http://localhost:$WEB_PORT für Redaxo"
-echo "  4. Öffne http://localhost:$PMA_PORT für phpMyAdmin"
+echo "  3. Öffne http://localhost:8082 für Redaxo"
+echo "  4. Öffne http://localhost:8083 für phpMyAdmin"
 echo
 print_info "Weitere Befehle:"
 echo "  ./stop.sh    - Container stoppen"
@@ -699,3 +906,4 @@ echo "  ./status.sh  - Status anzeigen"
 echo "  ./logs.sh    - Logs anzeigen"
 echo "  ./shell.sh   - In Container-Shell"
 echo "  ./cleanup.sh - Alles löschen"
+echo "  ./debug.sh   - Debug-Informationen"
