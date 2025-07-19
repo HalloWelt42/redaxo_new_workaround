@@ -53,3 +53,9 @@ temp_redaxo/media
 ./debug.sh   - Debug-Informationen
 MacBook:redaxo_projects macuser$ 
 ```
+
+![Redaxo Installation](./media/Bildschirmfoto%202025-07-19%20um%2012.58.41.png)
+
+![Redaxo Installation](./media/Bildschirmfoto%202025-07-19%20um%2012.59.53.png)
+
+![Redaxo Installation](./media/Bildschirmfoto%202025-07-19%20um%2013.00.31.png)
