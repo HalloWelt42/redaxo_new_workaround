@@ -1,0 +1,43 @@
+<!--
+    INTEGRATION IN DEINE BESTEHENDE SEITE
+    =====================================
+
+    Füge diese Zeilen in den <head> Bereich deiner HTML-Datei ein:
+-->
+
+<!-- Dracula Theme CSS -->
+<link rel="stylesheet" href="dracula-theme/css/dracula.min.css">
+<link rel="stylesheet" href="dracula-theme/css/dracula-custom.css">
+
+<!--
+    Füge diese Zeilen VOR dem schließenden </body> Tag ein:
+-->
+
+<!-- Highlight.js -->
+<script src="dracula-theme/js/highlight.min.js"></script>
+<script src="dracula-theme/js/php.min.js"></script>
+
+<!-- Initialisierung -->
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    // Finde alle Code-Blöcke
+    document.querySelectorAll('.code-block pre code').forEach((block) => {
+        // Füge die PHP-Klasse hinzu wenn data-lang="PHP"
+        const codeBlock = block.closest('.code-block');
+        if (codeBlock && codeBlock.getAttribute('data-lang') === 'PHP') {
+            block.classList.add('language-php');
+        }
+
+        // Highlight den Code
+        hljs.highlightElement(block);
+    });
+
+    // Optional: Highlight auch inline code
+    document.querySelectorAll('code:not(.hljs)').forEach((block) => {
+        if (block.textContent.includes('<?php') || block.textContent.includes('rex_')) {
+            block.classList.add('language-php');
+            hljs.highlightElement(block);
+        }
+    });
+});
+</script>
