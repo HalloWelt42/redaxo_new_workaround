@@ -22,30 +22,60 @@ print_warning() {
     echo -e "${YELLOW}[WARNING]${NC} $1"
 }
 
+# In den übergeordneten Ordner wechseln
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+cd "$SCRIPT_DIR/.." || {
+    print_error "Kann nicht in den übergeordneten Ordner wechseln!"
+    exit 1
+}
+
+print_info "Arbeitsverzeichnis: $(pwd)"
+
+# Funktion zur Projektnamens-Eingabe mit Validierung
+get_valid_project_name() {
+    local project_name=""
+    local max_attempts=3
+    local attempt=0
+
+    while [ $attempt -lt $max_attempts ]; do
+        if [ -z "$1" ] && [ $attempt -eq 0 ]; then
+            read -p "Bitte geben Sie den Projektnamen ein: " project_name
+        elif [ -n "$1" ] && [ $attempt -eq 0 ]; then
+            project_name="$1"
+        else
+            read -p "Bitte geben Sie einen gültigen Projektnamen ein: " project_name
+        fi
+
+        # Validierung des Projektnamens
+        if [[ "$project_name" =~ ^[a-zA-Z0-9_-]+$ ]]; then
+            # Prüfen ob Projekt bereits existiert
+            if [ -d "$project_name" ]; then
+                print_error "Das Verzeichnis '$project_name' existiert bereits!"
+                attempt=$((attempt + 1))
+                continue
+            fi
+            echo "$project_name"
+            return 0
+        else
+            print_error "Ungültiger Projektname. Erlaubt sind nur Buchstaben, Zahlen, - und _"
+            attempt=$((attempt + 1))
+        fi
+    done
+
+    print_error "Maximale Anzahl von Versuchen erreicht. Abbruch."
+    return 1
+}
+
 # Projektname ermitteln
-if [ -z "$1" ]; then
-    read -p "Bitte geben Sie den Projektnamen ein: " PROJECT_NAME
-else
-    PROJECT_NAME=$1
-fi
-
-# Validierung des Projektnamens
-if [[ ! "$PROJECT_NAME" =~ ^[a-zA-Z0-9_-]+$ ]]; then
-    print_error "Ungültiger Projektname. Erlaubt sind nur Buchstaben, Zahlen, - und _"
-    exit 1
-fi
-
-# Prüfen ob Projekt bereits existiert
-if [ -d "$PROJECT_NAME" ]; then
-    print_error "Das Verzeichnis '$PROJECT_NAME' existiert bereits!"
-    exit 1
-fi
+PROJECT_NAME=$(get_valid_project_name "$1") || exit 1
 
 print_info "Erstelle Projekt: $PROJECT_NAME"
 
 # Hauptverzeichnis erstellen
 mkdir -p "$PROJECT_NAME"
 cd "$PROJECT_NAME"
+
+# Ab hier bleibt alles gleich wie im Original...
 
 # Projektstruktur erstellen
 print_info "Erstelle Projektstruktur..."
@@ -893,6 +923,8 @@ chmod +x *.sh
 # Abschlussmeldung
 echo
 print_info "✅ Projekt '$PROJECT_NAME' wurde erfolgreich erstellt!"
+echo
+print_info "Arbeitsverzeichnis: $(pwd)"
 echo
 print_info "Nächste Schritte:"
 echo "  1. cd $PROJECT_NAME"
