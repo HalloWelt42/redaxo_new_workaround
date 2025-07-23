@@ -1,1 +1,10 @@
-/.idea/
+*
+
+!/docs
+!/media
+!.gitignore
+!/EXAMPLE.md
+!/README.md
+!/setup.sh
+
+
